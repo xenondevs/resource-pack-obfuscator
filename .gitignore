@@ -1,0 +1,10 @@
+# Intellij settings
+.idea
+*.iml
+
+# Build output
+build/
+gradle/
+target/
+out/
+*.class
