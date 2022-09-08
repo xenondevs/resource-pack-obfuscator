@@ -42,7 +42,7 @@ class ResourcePackObfuscator(
                 
                 val path = (renamer?.getNewFilePath(file) ?: file.relativeTo(packDir).invariantSeparatorsPath)
                 
-                val entry = ZipEntry(if (corruptEntries) "$path/" else path)
+                val entry = ZipEntry(if (corruptEntries && !isFontPath(path)) "$path/" else path)
                 entry.creationTime = FileTime.fromMillis(0L)
                 entry.lastAccessTime = FileTime.fromMillis(0L)
                 entry.lastModifiedTime = FileTime.fromMillis(0L)
@@ -57,5 +57,11 @@ class ResourcePackObfuscator(
             out.flush()
         }
     }
+    
+    private fun isFontPath(path: String): Boolean =
+        path.substringAfter('/')
+            .substringAfter('/')
+            .substringBefore('/')
+            .equals("font", true)
     
 }
