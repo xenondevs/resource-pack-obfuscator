@@ -24,7 +24,7 @@ class ResourcePackObfuscator(
         if (obfuscate) {
             if (!mcassetsDir.exists()) {
                 runBlocking {
-                    MinecraftAssetsDownloader(outputDirectory = mcassetsDir, mode = ExtractionMode.CLIENT)
+                    MinecraftAssetsDownloader(outputDirectory = mcassetsDir, mode = ExtractionMode.MOJANG_API_CLIENT)
                         .downloadAssets()
                 }
             }
