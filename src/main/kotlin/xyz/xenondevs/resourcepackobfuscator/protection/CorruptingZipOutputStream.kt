@@ -69,7 +69,7 @@ internal class CorruptingZipOutputStream(private val out: OutputStream) : Output
     private enum class HeaderType(val skip: Int, val overwrite: Int, vararg val signature: Byte) {
         CENTRAL_DIRECTORY(12, 12, 0x01, 0x02),
         LOCAL_FILE(10, 12, 0x03, 0x04),
-        END(0, 18, 0x05, 0x06)
+        // END(0, 18, 0x05, 0x06) fixme
     }
     
 }
