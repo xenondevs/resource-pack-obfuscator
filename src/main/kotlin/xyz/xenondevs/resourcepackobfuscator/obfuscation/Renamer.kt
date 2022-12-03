@@ -9,14 +9,22 @@ import xyz.xenondevs.resourcepackobfuscator.util.GSON
 import xyz.xenondevs.resourcepackobfuscator.util.getOrNull
 import xyz.xenondevs.resourcepackobfuscator.util.getString
 import xyz.xenondevs.resourcepackobfuscator.util.parseJson
-import java.io.File
 import java.io.OutputStream
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.exists
+import kotlin.io.path.extension
+import kotlin.io.path.invariantSeparatorsPathString
+import kotlin.io.path.isDirectory
+import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.name
+import kotlin.io.path.relativeTo
 
 private val CHARS = "abcdefghijklmnopqrstuvwxyz0123456789".toCharArray()
 
-internal class Renamer(private val packDir: File, private val mcassetsDir: File) {
+internal class Renamer(private val packDir: Path, private val mcassetsDir: Path) {
     
-    private val assetsDir = File(packDir, "assets/")
+    private val assetsDir = packDir.resolve("assets/")
     private val nameSupplier = CharSupplier(CHARS)
     
     private val mappings = HashMap<String, String>()
@@ -28,31 +36,34 @@ internal class Renamer(private val packDir: File, private val mcassetsDir: File)
     
     //<editor-fold desc="Mappings generation logic">
     fun createNameMappings() {
-        assetsDir.listFiles()
-            ?.filter { it.isDirectory }
-            ?.forEach {
+        assetsDir.listDirectoryEntries()
+            .filter { it.isDirectory() }
+            .forEach {
                 val namespace = it.name
-                createNameMappings(namespace, File(it, "textures"), textureIdMappings)
-                createNameMappings(namespace, File(it, "models"), modelIdMappings)
-                createNameMappings(namespace, File(it, "sounds"), soundIdMappings)
+                createNameMappings(namespace, it.resolve("textures"), textureIdMappings)
+                createNameMappings(namespace, it.resolve("models"), modelIdMappings)
+                createNameMappings(namespace, it.resolve("sounds"), soundIdMappings)
             }
     }
     
-    fun getNewFilePath(file: File): String {
-        val relPath = file.relativeTo(packDir).invariantSeparatorsPath
+    fun getNewFilePath(file: Path): String {
+        val relPath = file.relativeTo(packDir).invariantSeparatorsPathString
         return mappings[relPath] ?: relPath
     }
     
     private fun createNameMappings(
         namespace: String,
-        folder: File,
+        folder: Path,
         mappingsMap: MutableMap<ResourceId, ResourceId>
     ) {
-        folder.walkTopDown().forEach { file ->
-            if (file.isDirectory || file.extension == "mcmeta")
+        if (!folder.exists())
+            return
+        
+        Files.walk(folder).forEach { file ->
+            if (file.isDirectory() || file.extension == "mcmeta")
                 return@forEach
             
-            val relPathToPack = file.relativeTo(packDir).invariantSeparatorsPath
+            val relPathToPack = file.relativeTo(packDir).invariantSeparatorsPathString
             if (!isDefaultAsset(relPathToPack)) {
                 val name = nameSupplier.nextString()
                 val nameWithExt = "$name.${file.extension}"
@@ -61,7 +72,7 @@ internal class Renamer(private val packDir: File, private val mcassetsDir: File)
                 val id = ResourceId(
                     namespace,
                     file.relativeTo(folder)
-                        .invariantSeparatorsPath
+                        .invariantSeparatorsPathString
                         .substringBeforeLast('.')
                 )
                 mappingsMap[id] = ResourceId(obfNamespace, name)
@@ -69,23 +80,23 @@ internal class Renamer(private val packDir: File, private val mcassetsDir: File)
                 val newFilePath = "assets/$obfNamespace/${folder.name}/$nameWithExt"
                 mappings[relPathToPack] = newFilePath
                 // mcmeta file path mapping
-                val mcMetaFile = File(file.parentFile, file.name + ".mcmeta")
+                val mcMetaFile = file.parent.resolve(file.name + ".mcmeta")
                 if (mcMetaFile.exists())
                     mappings["$relPathToPack.mcmeta"] = "$newFilePath.mcmeta"
             }
         }
     }
     
-    private fun isDefaultAsset(path: String) = File(mcassetsDir, path).exists()
+    private fun isDefaultAsset(path: String) = mcassetsDir.resolve(path).exists()
     //</editor-fold>
     
     //<editor-fold desc="Mappings applying logic">
-    fun processAndCopyFile(file: File, out: OutputStream) {
+    fun processAndCopyFile(file: Path, out: OutputStream) {
         val json = file.parseJson()
         
         if (json is JsonObject) {
             // check for sounds file
-            if (file.name.equals("sounds.json", true) && file.parentFile.parentFile.name.equals("assets", true)) {
+            if (file.name.equals("sounds.json", true) && file.parent.parent.name.equals("assets", true)) {
                 renameSounds(json)
             } else {
                 val keys = json.keySet()

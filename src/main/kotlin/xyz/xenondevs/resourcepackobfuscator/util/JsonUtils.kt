@@ -13,10 +13,14 @@ import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.Reader
 import java.lang.reflect.Type
+import java.nio.file.Path
+import kotlin.io.path.reader
 
 internal val GSON = GsonBuilder().create()
 
 internal fun File.parseJson(): JsonElement = reader().use(JsonParser::parseReader)
+
+internal fun Path.parseJson(): JsonElement = reader().use(JsonParser::parseReader)
 
 internal fun InputStream.parseJson(): JsonElement = use { JsonParser.parseReader(InputStreamReader(this)) }
 
