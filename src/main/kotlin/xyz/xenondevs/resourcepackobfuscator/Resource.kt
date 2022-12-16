@@ -4,7 +4,7 @@ private val NAMESPACED_PATH_REGEX = Regex("""^(\w*):([\w/-]*)$""")
 private val NAMESPACE_REGEX = Regex("""^(\w*)$""")
 private val PATH_REGEX = Regex("""^([\w/-]*)$""")
 
-internal data class ResourceId(val namespace: String, val path: String) {
+internal data class ResourcePath(val namespace: String, val path: String) {
     
     private val id = "$namespace:$path"
     
@@ -14,7 +14,7 @@ internal data class ResourceId(val namespace: String, val path: String) {
     }
     
     override fun equals(other: Any?): Boolean {
-        return other is ResourceId && other.id == id
+        return other is ResourcePath && other.id == id
     }
     
     override fun hashCode(): Int {
@@ -27,14 +27,14 @@ internal data class ResourceId(val namespace: String, val path: String) {
     
     companion object {
         
-        fun of(id: String, fallbackNamespace: String = "minecraft"): ResourceId {
+        fun of(id: String, fallbackNamespace: String = "minecraft"): ResourcePath {
             return if (PATH_REGEX.matches(id)) {
-                ResourceId(fallbackNamespace, id)
+                ResourcePath(fallbackNamespace, id)
             } else {
                 val match = NAMESPACED_PATH_REGEX.matchEntire(id)
                     ?: throw IllegalArgumentException("Invalid resource id: $id")
                 
-                ResourceId(match.groupValues[1], match.groupValues[2])
+                ResourcePath(match.groupValues[1], match.groupValues[2])
             }
         }
         

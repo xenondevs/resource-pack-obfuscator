@@ -3,7 +3,9 @@ package xyz.xenondevs.resourcepackobfuscator.obfuscation
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
-import xyz.xenondevs.resourcepackobfuscator.ResourceId
+import xyz.xenondevs.resourcepackobfuscator.ResourcePath
+import xyz.xenondevs.resourcepackobfuscator.obfuscation.atlas.AtlasSource
+import xyz.xenondevs.resourcepackobfuscator.obfuscation.atlas.AtlasSources
 import xyz.xenondevs.resourcepackobfuscator.obfuscation.supplier.CharSupplier
 import xyz.xenondevs.resourcepackobfuscator.util.GSON
 import xyz.xenondevs.resourcepackobfuscator.util.getOrNull
@@ -27,10 +29,11 @@ internal class Renamer(private val packDir: Path, private val mcassetsDir: Path)
     private val assetsDir = packDir.resolve("assets/")
     private val nameSupplier = CharSupplier(CHARS)
     
+    private val atlases = AtlasSources(packDir, mcassetsDir)
     private val mappings = HashMap<String, String>()
-    private val textureIdMappings = HashMap<ResourceId, ResourceId>()
-    private val modelIdMappings = HashMap<ResourceId, ResourceId>()
-    private val soundIdMappings = HashMap<ResourceId, ResourceId>()
+    private val textureIdMappings = HashMap<ResourcePath, ResourcePath>()
+    private val modelIdMappings = HashMap<ResourcePath, ResourcePath>()
+    private val soundIdMappings = HashMap<ResourcePath, ResourcePath>()
     
     private val obfNamespace = nameSupplier.nextString()
     
@@ -40,7 +43,7 @@ internal class Renamer(private val packDir: Path, private val mcassetsDir: Path)
             .filter { it.isDirectory() }
             .forEach {
                 val namespace = it.name
-                createNameMappings(namespace, it.resolve("textures"), textureIdMappings)
+                createTextureNameMappings(namespace, it.resolve("textures"), textureIdMappings)
                 createNameMappings(namespace, it.resolve("models"), modelIdMappings)
                 createNameMappings(namespace, it.resolve("sounds"), soundIdMappings)
             }
@@ -51,10 +54,82 @@ internal class Renamer(private val packDir: Path, private val mcassetsDir: Path)
         return mappings[relPath] ?: relPath
     }
     
+    private fun createTextureNameMappings(
+        namespace: String,
+        folder: Path,
+        mappingsMap: MutableMap<ResourcePath, ResourcePath>
+    ) {
+        walkAssetsFolder(namespace, folder) { file, relPathToPack, resourcePath ->
+            val obfName: String
+            val obfPath: ResourcePath
+            
+            val singleSources = atlases.getSingleFileSources(resourcePath)
+            val dirSources = atlases.getDirectorySources(resourcePath)
+            if (singleSources.isNotEmpty()) {
+                if (singleSources.all(AtlasSource::isMutable)) {
+                    obfName = nameSupplier.nextString()
+                    obfPath = ResourcePath(obfNamespace, obfName)
+                    singleSources.forEach {
+                        it.resource = obfPath
+                        
+                        // obfuscate the separate sprite resource path, if present
+                        val spritePath = it.sprite
+                        if (spritePath != null) {
+                            val obfSpriteName = nameSupplier.nextString()
+                            val obfSpritePath = ResourcePath(obfNamespace, obfSpriteName)
+                            mappingsMap[spritePath] = obfSpritePath
+                        }
+                    }
+                } else {
+                    // do not rename the texture if non-mutable atlas sources reference it
+                    return@walkAssetsFolder
+                }
+            } else if (dirSources.isNotEmpty()) {
+                // TODO: obfuscate directory names
+                // the directory with the longest name is the most specific one that fits for all atlases
+                val commonDirPrefix = dirSources.maxBy { it.prefix.length }.prefix
+                obfName = commonDirPrefix + nameSupplier.nextString()
+                obfPath = ResourcePath(obfNamespace, obfName)
+            } else {
+                obfName = nameSupplier.nextString()
+                obfPath = ResourcePath(obfNamespace, obfName)
+            }
+            
+            // resource path mapping
+            mappingsMap[resourcePath] = obfPath
+            // file path mapping
+            val newFilePath = "assets/$obfNamespace/${folder.name}/$obfName.png"
+            mappings[relPathToPack] = newFilePath
+            // mcmeta file path mapping
+            val mcMetaFile = file.parent.resolve(file.name + ".mcmeta")
+            if (mcMetaFile.exists())
+                mappings["$relPathToPack.mcmeta"] = "$newFilePath.mcmeta"
+        }
+        
+        atlases.writeMutableSources()
+    }
+    
     private fun createNameMappings(
         namespace: String,
         folder: Path,
-        mappingsMap: MutableMap<ResourceId, ResourceId>
+        mappingsMap: MutableMap<ResourcePath, ResourcePath>
+    ) {
+        walkAssetsFolder(namespace, folder) { file, relPathToPack, resourcePath ->
+            val name = nameSupplier.nextString()
+            val nameWithExt = "$name.${file.extension}"
+            
+            // resource path mapping
+            mappingsMap[resourcePath] = ResourcePath(obfNamespace, name)
+            // file path mapping
+            val newFilePath = "assets/$obfNamespace/${folder.name}/$nameWithExt"
+            mappings[relPathToPack] = newFilePath
+        }
+    }
+    
+    private fun walkAssetsFolder(
+        namespace: String,
+        folder: Path,
+        walk: (Path, String, ResourcePath) -> Unit
     ) {
         if (!folder.exists())
             return
@@ -64,25 +139,10 @@ internal class Renamer(private val packDir: Path, private val mcassetsDir: Path)
                 return@forEach
             
             val relPathToPack = file.relativeTo(packDir).invariantSeparatorsPathString
+            val relPathToFolder = file.relativeTo(folder).invariantSeparatorsPathString
+            val resourcePath = ResourcePath(namespace, relPathToFolder.substringBeforeLast('.'))
             if (!isDefaultAsset(relPathToPack)) {
-                val name = nameSupplier.nextString()
-                val nameWithExt = "$name.${file.extension}"
-                
-                // id mapping
-                val id = ResourceId(
-                    namespace,
-                    file.relativeTo(folder)
-                        .invariantSeparatorsPathString
-                        .substringBeforeLast('.')
-                )
-                mappingsMap[id] = ResourceId(obfNamespace, name)
-                // file path mapping
-                val newFilePath = "assets/$obfNamespace/${folder.name}/$nameWithExt"
-                mappings[relPathToPack] = newFilePath
-                // mcmeta file path mapping
-                val mcMetaFile = file.parent.resolve(file.name + ".mcmeta")
-                if (mcMetaFile.exists())
-                    mappings["$relPathToPack.mcmeta"] = "$newFilePath.mcmeta"
+                walk(file, relPathToPack, resourcePath)
             }
         }
     }
@@ -207,18 +267,18 @@ internal class Renamer(private val packDir: Path, private val mcassetsDir: Path)
             addProperty(key, getNewSoundResourceId(value).toString())
     }
     
-    private fun getNewTextureResourceId(id: String): ResourceId {
-        val rid = ResourceId.of(id)
+    private fun getNewTextureResourceId(id: String): ResourcePath {
+        val rid = ResourcePath.of(id)
         return textureIdMappings[rid] ?: rid
     }
     
-    private fun getNewModelResourceId(id: String): ResourceId {
-        val rid = ResourceId.of(id)
+    private fun getNewModelResourceId(id: String): ResourcePath {
+        val rid = ResourcePath.of(id)
         return modelIdMappings[rid] ?: rid
     }
     
-    private fun getNewSoundResourceId(id: String): ResourceId {
-        val rid = ResourceId.of(id)
+    private fun getNewSoundResourceId(id: String): ResourcePath {
+        val rid = ResourcePath.of(id)
         return soundIdMappings[rid] ?: rid
     }
     //</editor-fold>

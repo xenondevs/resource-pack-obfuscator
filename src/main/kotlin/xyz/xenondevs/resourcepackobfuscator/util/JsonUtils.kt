@@ -7,7 +7,11 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.JsonPrimitive
+import com.google.gson.TypeAdapter
 import com.google.gson.reflect.TypeToken
+import xyz.xenondevs.resourcepackobfuscator.ResourcePath
+import xyz.xenondevs.resourcepackobfuscator.json.serialization.RegexTypeAdapter
+import xyz.xenondevs.resourcepackobfuscator.json.serialization.ResourcePathTypeAdapter
 import java.io.File
 import java.io.InputStream
 import java.io.InputStreamReader
@@ -15,8 +19,12 @@ import java.io.Reader
 import java.lang.reflect.Type
 import java.nio.file.Path
 import kotlin.io.path.reader
+import kotlin.io.path.writeText
 
-internal val GSON = GsonBuilder().create()
+internal val GSON = GsonBuilder()
+    .registerTypeAdapter(ResourcePathTypeAdapter)
+    .registerTypeAdapter(RegexTypeAdapter)
+    .create()
 
 internal fun File.parseJson(): JsonElement = reader().use(JsonParser::parseReader)
 
@@ -70,6 +78,9 @@ internal fun JsonObject.getOrNull(property: String) = if (has(property)) get(pro
 internal operator fun JsonObject.set(property: String, value: JsonElement) = add(property, value)
 
 internal fun JsonElement.writeToFile(file: File) =
+    file.writeText(toString())
+
+internal fun JsonElement.writeToFile(file: Path) =
     file.writeText(toString())
 
 internal fun JsonElement.isString() =
@@ -180,7 +191,7 @@ internal inline fun <reified T> Gson.fromJson(reader: Reader): T? {
     return fromJson(reader, type<T>())
 }
 
-internal inline fun <reified T> GsonBuilder.registerTypeHierarchyAdapter(typeAdapter: Any): GsonBuilder =
-    registerTypeHierarchyAdapter(T::class.java, typeAdapter)
+internal inline fun <reified T> GsonBuilder.registerTypeAdapter(typeAdapter: TypeAdapter<T>): GsonBuilder =
+    registerTypeAdapter(type<T>(), typeAdapter)
 
 internal inline fun <reified T> type(): Type = object : TypeToken<T>() {}.type
