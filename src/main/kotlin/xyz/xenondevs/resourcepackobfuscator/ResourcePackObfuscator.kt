@@ -60,7 +60,7 @@ class ResourcePackObfuscator(
             out.setLevel(compressionLevel)
             
             Files.walk(packDir).forEach { file ->
-                if (file.isDirectory() || fileFilter?.invoke(file) == true)
+                if (file.isDirectory() || fileFilter?.invoke(file) == false)
                     return@forEach
                 
                 val path = (renamer?.getNewFilePath(file) ?: file.relativeTo(packDir).invariantSeparatorsPathString)
